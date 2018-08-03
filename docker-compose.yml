@@ -1,0 +1,17 @@
+version: '3'
+
+services:
+  get_famous_people_photos:
+    build:
+      context: ./
+      dockerfile: ./get_famous_people_photos/Dockerfile
+    env_file:
+      - .env
+    volumes:
+      - ./common/images:/app/images
+  get_famous_people_list:
+    build:
+      context: ./
+      dockerfile: ./get_famous_people_list/Dockerfile
+    volumes:
+      - ./common/text_files:/app/text_files
