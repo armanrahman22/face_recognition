@@ -10,3 +10,5 @@ h5py
 matplotlib
 Pillow
 psutil
+dhash
+pybktree
