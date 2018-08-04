@@ -4,6 +4,7 @@ import os
 from functools import wraps
 from io import BytesIO
 from multiprocessing.dummy import Pool as ThreadPool
+from multiprocessing import Pool 
 from os import getenv
 from time import time
 
@@ -17,7 +18,7 @@ from requests import exceptions
 import face
 
 BING_API_KEY = getenv('BING_API_KEY', '')
-NUM_THREADS = getenv('NUM_THREADS', 4)
+NUM_THREADS = getenv('NUM_THREADS', 50)
 MAX_RESULTS = 150
 
 URL = "https://api.cognitive.microsoft.com/bing/v7.0/images/search"
@@ -63,25 +64,45 @@ def get_photos(famous_people_file):
 	with open(famous_people_file) as fp:
 		people = fp.read().splitlines() 
 	unique_people = set(people)
-	pool = ThreadPool(int(NUM_THREADS)) 
-	pool.map(get_urls, unique_people)
-	pool.close() 
-	pool.join() 
+	
+	urls_and_people = urls_thread(unique_people)
+	pare_multi_process(urls_and_people)
+
+
+@timing
+def urls_thread(unique_people):
+	print("[INFO] Fetching image urls")
+	thread_pool = ThreadPool(int(NUM_THREADS)) 
+	urls_and_people = thread_pool.map(get_urls, unique_people)
+	thread_pool.close() 
+	thread_pool.join() 
+	print("[INFO] Done fetching image urls")
+	return urls_and_people
+
+
+@timing
+def pare_multi_process(urls_and_people):
+	print("[INFO] Paring and downlaoding all image urls")
+	pare_pool = Pool()
+	pare_pool.map(pare_matches_and_download, urls_and_people)
+	pare_pool.close() 
+	pare_pool.join()
+	print("[INFO] Done paring and downlaoding all image urls")
 
 
 def get_urls(person):
 	params = {"q": person, "count": MAX_RESULTS, "imageType": "photo"}
-	print("[INFO] searching Bing API for '{}'".format(person))
 	search = requests.get(URL, headers=HEADERS, params=params)
 	search.raise_for_status()
 	results = search.json()
 	thumbnail_urls = [img["thumbnailUrl"] + '&c=7&w=250&h=250' for img in results["value"]]
-	urls = pare_matches(thumbnail_urls)
-	download_urls(person, urls)
+	return thumbnail_urls, person
 
 
 @timing
-def pare_matches(thumbnail_urls):
+def pare_matches_and_download(urls_and_person):
+	thumbnail_urls, person = urls_and_person
+	print("[INFO] paring urls for '{}'".format(person))
 	urls = []
 	# Make sure all the matches are of the same person
 	identifier = face.Identifier()
@@ -94,7 +115,6 @@ def pare_matches(thumbnail_urls):
 	# Make sure there are no duplicate images
 	image_hashes = [HASH_URL(url_to_img_hash(url), url) for url in urls]
 	tree = pybktree.BKTree(image_distance, image_hashes)
-
 	to_discard = []
 	urls_to_keep = []
 	for image_hash in image_hashes:
@@ -104,12 +124,14 @@ def pare_matches(thumbnail_urls):
 				if match[1].url != image_hash.url:
 					to_discard.append(match[1])
 			urls_to_keep.append(image_hash.url)
-	return urls_to_keep
+	
+	# Download the images 
+	download_urls(person, urls_to_keep)
 
 
 def download_urls(person, urls):
 	if len(urls) > 5:
-		directory = '../images/' + person
+		directory = '../../common/images/' + person
 		if not os.path.exists(directory):
 			os.makedirs(directory)
 		count = 0
@@ -121,4 +143,4 @@ def download_urls(person, urls):
 
 
 if __name__ == "__main__":
-	get_photos('famous_people.txt')
+	get_photos('../../common/text_files/famous_people.txt')
