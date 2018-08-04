@@ -20,7 +20,7 @@ import face
 
 BING_API_KEY = getenv('BING_API_KEY', '')
 NUM_THREADS = getenv('NUM_THREADS', 100)
-NUM_PROCESSES = getenv('NUM_PROCESSES', 50)
+NUM_PROCESSES = getenv('NUM_PROCESSES', 8)
 MAX_RESULTS = 150
 
 URL = "https://api.cognitive.microsoft.com/bing/v7.0/images/search"
@@ -114,15 +114,13 @@ def get_urls(person):
 @timing
 def pare_matches_and_download(urls_and_person):
 	thumbnail_urls, person = urls_and_person
-	print("[INFO] paring urls for '{}'".format(person))
+	# print("[INFO] paring urls for '{}'".format(person))
 	urls = []
 	# Make sure all the matches are of the same person
 	identifier = face.Identifier()
 	if len(thumbnail_urls) > 1:
-		img_base = url_to_image(thumbnail_urls[0])
 		for image_url in thumbnail_urls:
-			img_other = url_to_image(image_url)
-			match = identifier.compare_faces(img_base, img_other)
+			match = identifier.compare_faces(thumbnail_urls[0], image_url, True)
 			if match.is_match:
 				urls.append(image_url)
 	
@@ -144,11 +142,9 @@ def pare_matches_and_download(urls_and_person):
 
 	# update counter 
 	increment()
-	if int(counter.value)%(TOTAL_COUNT//20) == 0:
+	if int(counter.value)%(TOTAL_COUNT//1000) == 0:
 		percent = int(round(counter.value/TOTAL_COUNT, 2) * 100)
 		print('{}% Complete'.format(str(percent)))
-
-
 
 
 def download_urls(person, urls):
