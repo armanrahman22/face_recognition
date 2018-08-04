@@ -1,10 +1,11 @@
 import collections
 import itertools
 import os
+from ctypes import c_int
 from functools import wraps
 from io import BytesIO
+from multiprocessing import Lock, Pool, Value
 from multiprocessing.dummy import Pool as ThreadPool
-from multiprocessing import Pool 
 from os import getenv
 from time import time
 
@@ -18,7 +19,8 @@ from requests import exceptions
 import face
 
 BING_API_KEY = getenv('BING_API_KEY', '')
-NUM_THREADS = getenv('NUM_THREADS', 50)
+NUM_THREADS = getenv('NUM_THREADS', 100)
+NUM_PROCESSES = getenv('NUM_PROCESSES', 50)
 MAX_RESULTS = 150
 
 URL = "https://api.cognitive.microsoft.com/bing/v7.0/images/search"
@@ -29,6 +31,15 @@ EXCEPTIONS = set([IOError, FileNotFoundError,
 	exceptions.ConnectionError, exceptions.Timeout])
 
 HASH_URL = collections.namedtuple('HASH_URL', 'bits url')
+
+counter = Value(c_int)  # defaults to 0
+counter_lock = Lock()
+
+TOTAL_COUNT = 0
+
+def increment():
+    with counter_lock:
+        counter.value += 1
 
 
 def timing(f):
@@ -60,11 +71,12 @@ def image_distance(x, y):
 
 
 def get_photos(famous_people_file):
+	global TOTAL_COUNT
 	people = []
 	with open(famous_people_file) as fp:
 		people = fp.read().splitlines() 
 	unique_people = set(people)
-	
+	TOTAL_COUNT = len(unique_people)
 	urls_and_people = urls_thread(unique_people)
 	pare_multi_process(urls_and_people)
 
@@ -83,7 +95,7 @@ def urls_thread(unique_people):
 @timing
 def pare_multi_process(urls_and_people):
 	print("[INFO] Paring and downlaoding all image urls")
-	pare_pool = Pool()
+	pare_pool = Pool(int(NUM_PROCESSES))
 	pare_pool.map(pare_matches_and_download, urls_and_people)
 	pare_pool.close() 
 	pare_pool.join()
@@ -107,8 +119,10 @@ def pare_matches_and_download(urls_and_person):
 	# Make sure all the matches are of the same person
 	identifier = face.Identifier()
 	if len(thumbnail_urls) > 1:
+		img_base = url_to_image(thumbnail_urls[0])
 		for image_url in thumbnail_urls:
-			match = identifier.compare_faces(thumbnail_urls[0], image_url, True)
+			img_other = url_to_image(image_url)
+			match = identifier.compare_faces(img_base, img_other)
 			if match.is_match:
 				urls.append(image_url)
 	
@@ -127,6 +141,14 @@ def pare_matches_and_download(urls_and_person):
 	
 	# Download the images 
 	download_urls(person, urls_to_keep)
+
+	# update counter 
+	increment()
+	if int(counter.value)%(TOTAL_COUNT//20) == 0:
+		percent = int(round(counter.value/TOTAL_COUNT, 2) * 100)
+		print('{}% Complete'.format(str(percent)))
+
+
 
 
 def download_urls(person, urls):

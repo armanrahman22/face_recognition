@@ -66,7 +66,7 @@ class Match:
     def __init__(self):
         self.face_1 = Face()
         self.face_2 = Face()
-        self.score = float("inf")
+        self.score = 1000
         self.is_match = False
 
 
@@ -82,15 +82,8 @@ class Identifier:
             face.embedding = self.encoder.generate_embedding(face)
         return faces
     
-    def compare_faces(self, image_1, image_2, is_from_url):
+    def compare_faces(self, image_1, image_2):
         match = Match()
-        if is_from_url:
-            req = urlopen(image_1)
-            arr = np.asarray(bytearray(req.read()), dtype=np.uint8)
-            image_1 = cv2.imdecode(arr, -1)
-            req = urlopen(image_2)
-            arr = np.asarray(bytearray(req.read()), dtype=np.uint8)
-            image_2 = cv2.imdecode(arr, -1)
         image_1_faces = self.detect_encode(image_1)
         image_2_faces = self.detect_encode(image_2)
         if image_1_faces and image_2_faces:
@@ -196,12 +189,3 @@ def align_dataset(input_dir, output_dir, image_size, margin, random_order, gpu_m
         args.append('--detect_multiple_faces')
     align_dataset_mtcnn.main(align_dataset_mtcnn.parse_arguments(args))
 
-# def test_dataset(input_dir, output_dir, image_size, margin, random_order, gpu_memory_fraction, detect_multiple_faces):
-#     args = [input_dir, output_dir, '--image_size', image_size, '--margin', margin]
-#     if random_order:
-#         args.append('--random_order')
-#     args.append('--gpu_memory_fraction')
-#     args.append(gpu_memory_fraction)
-#     if detect_multiple_faces:
-#         args.append('--detect_multiple_faces')
-#     align_dataset_mtcnn.main(align_dataset_mtcnn.parse_arguments(args))
