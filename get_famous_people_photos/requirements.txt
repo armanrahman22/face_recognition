@@ -12,3 +12,5 @@ Pillow
 psutil
 dhash
 pybktree
+progressbar
+pathos
