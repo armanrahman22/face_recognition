@@ -18,7 +18,6 @@ import progressbar as pb
 import pybktree
 import requests
 import tensorflow as tf
-from memory_profiler import profile
 from pathos.multiprocessing import ProcessPool
 from PIL import Image
 from requests import exceptions
@@ -111,7 +110,7 @@ def get_photos(famous_people_file):
 	reset()
 	
 	timer = pb.ProgressBar(widgets=widgets_pare, maxval=total_count).start()
-	pare_multi_process(urls_and_people[:12])
+	pare_multi_process(urls_and_people)
 
 
 def urls_thread(unique_people):

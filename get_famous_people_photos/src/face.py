@@ -40,7 +40,6 @@ import numpy as np
 import tensorflow as tf
 from facenet_sandberg import facenet, validate_on_lfw
 from facenet_sandberg.align import align_dataset_mtcnn, detect_face
-from memory_profiler import profile
 from scipy import misc
 
 facenet_model_checkpoint = "../../common/models/20180402-114759.pb"
@@ -49,6 +48,15 @@ debug = False
 
 class Face:
     """Class representing a single face
+
+    Attributes:
+        name {str} -- Name of person 
+        bounding_box {Float[]} -- box around their face in container_image
+        image {cv2 image (np array)} -- Image cropped around face
+        container_image {cv2 image (np array)} -- Original image
+        embedding {Float} -- Face embedding
+        matches {Matches[]} -- List of matches to the face
+        url {str} -- Url where image came from
     """
     def __init__(self):
         self.name = None
@@ -62,6 +70,12 @@ class Face:
 
 class Match:
     """Class representing a match between two faces
+
+    Attributes:
+        face_1 {Face} -- Face object for person 1
+        face_2 {Face} -- Face object for person 2
+        score {Float} -- Distance between two face embeddings
+        is_match {bool} -- whether is match between faces
     """
     def __init__(self):
         self.face_1 = Face()
@@ -110,7 +124,7 @@ class Identifier:
 
         faces = self.detector.find_faces(image, face_limit)
         for face in faces:
-            face.embedding = self.encoder.generate_embedding(face)
+            face.embedding = self.encoder.generate_embedding(face.image)
         return faces
     
     def detect_encode_all(self, images, urls=None, save_memory=False):
@@ -122,25 +136,49 @@ class Identifier:
         Keyword Arguments:
             urls {str[]} -- Optional list of urls to attach to Face objects. 
                             Should be same length as images if used. (default: {None})
-            save_memory {bool} -- Saves memory by deleting image array from Face objects.
-                                  Should only be used if with r(default: {False})
+            save_memory {bool} -- Saves memory by deleting image from Face objects.
+                                  Should only be used if with you have some other kind 
+                                  of refference to the original image like a url. (default: {False})
         
         Returns:
-            [type] -- [description]
+            Face[] -- List of Face objects with 
         """
 
         all_faces = self.detector.bulk_find_face(images, urls)
         all_embeddings = self.encoder.get_all_embeddings(all_faces, save_memory)
         return all_embeddings
     
-    def compare_embedding(self, embedding_1, embedding_2):
-        distance = facenet.distance(embedding_1.reshape(1,-1), embedding_2.reshape(1,-1), distance_metric=0)[0]
+    def compare_embedding(self, embedding_1, embedding_2, distance_metric=0):
+        """Compares the distance between two embeddings
+        
+        Arguments:
+            embedding_1 {numpy.ndarray} -- face embedding
+            embedding_2 {numpy.ndarray} -- face embedding
+        
+        Keyword Arguments:
+            distance_metric {int} -- 0 for Euclidian distance and 1 for Cosine similarity (default: {0})
+        
+        Returns:
+            bool, float -- returns True if match and distance
+        """
+
+        distance = facenet.distance(embedding_1.reshape(1,-1), embedding_2.reshape(1,-1), distance_metric=distance_metric)[0]
         is_match = False
         if distance < self.threshold:
             is_match = True
         return is_match, distance
 
     def compare_images(self, image_1, image_2):
+        """Compares two images for matching faces
+        
+        Arguments:
+            image_1 {cv2 image (np array)} -- openCV image
+            image_2 {cv2 image (np array)} -- openCV image
+        
+        Returns:
+            Match -- Match object which has the two images, is_match, and score
+        """
+
         match = Match()
         image_1_faces = self.detect_encode(image_1)
         image_2_faces = self.detect_encode(image_2)
@@ -157,6 +195,15 @@ class Identifier:
         return match
     
     def find_all_matches(self, image_directory):
+        """Finds all matches in a directory of images
+        
+        Arguments:
+            image_directory {str} -- directory of images
+        
+        Returns:
+            Face[], Match[] -- List of face objects and list of Match objects 
+        """
+
         all_images = glob(image_directory + '/*')
         all_matches = []
         all_faces = self.detect_encode_all(all_images)
@@ -184,14 +231,35 @@ class Encoder:
         self.embeddings = tf.get_default_graph().get_tensor_by_name("embeddings:0")
         self.phase_train_placeholder = tf.get_default_graph().get_tensor_by_name("phase_train:0")
 
-    def generate_embedding(self, face):
-        prewhiten_face = facenet.prewhiten(face.image)
+    def generate_embedding(self, image):
+        """Generates embeddings for a Face object with image
+        
+        Arguments:
+            image {cv2 image (np array)} -- Image of face. Should be aligned.
+        
+        Returns:
+            numpy.ndarray -- a single vector representing a face embedding
+        """
+
+        prewhiten_face = facenet.prewhiten(image)
 
         # Run forward pass to calculate embeddings
         feed_dict = {self.images_placeholder: [prewhiten_face], self.phase_train_placeholder: False}
         return self.sess.run(self.embeddings, feed_dict=feed_dict)[0]
     
     def get_all_embeddings(self, all_faces, save_memory=False):
+        """Generates embeddings for list of images
+        
+        Arguments:
+            all_faces {cv2 image[]} -- array of face images
+        
+        Keyword Arguments:
+            save_memory {bool} -- save memory by deleting image from Face object  (default: {False})
+        
+        Returns:
+            [type] -- [description]
+        """
+
         all_images = [facenet.prewhiten(face.image) for face in all_faces]
 
         # Run forward pass to calculate embeddings
